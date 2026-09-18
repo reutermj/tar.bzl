@@ -4,7 +4,7 @@ load("@bazel_lib//lib:testing.bzl", "assert_archive_contains")
 load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("@tar.bzl", "mtree_mutate", "mtree_spec", "tar")
+load("@tar.bzl", "mtree_concat", "mtree_mutate", "mtree_spec", "tar")
 load(":asserts.bzl", "assert_tar_listing", "assert_unused_listing")
 load(":cross_repo_symlink.bzl", "cross_repo_symlink")
 load(":directory.bzl", "directory")
@@ -1230,5 +1230,43 @@ assert_tar_listing(
     expected = [
         "drwxr-xr-x  0 0      0           0 Jan  1  2000 opt/",
         "-rwxr-xr-x  0 0      0          21 Jan  1  2023 opt/src_file",
+    ],
+)
+
+#############
+# Example 31: files from two packages placed in the same directory of the tar.
+# `strip_prefix` keeps only the entries under one prefix, so each package relocates
+# its own files with its own `mtree_mutate`, and `mtree_concat` merges the specs.
+# Unlike the plain concatenation in Example 27, the merge emits the shared parent
+# directories once and fails on conflicting entries for the same path, where bsdtar
+# would silently keep the last one. See //tar/tests/concat for the merge semantics.
+mtree_concat(
+    name = "mtree31",
+    testonly = True,
+    srcs = [
+        "//tar/tests/multi/a:mtree",
+        "//tar/tests/multi/b:mtree",
+    ],
+)
+
+tar(
+    name = "tar31",
+    testonly = True,
+    srcs = [
+        "//tar/tests/multi/a:x.txt",
+        "//tar/tests/multi/b:y.txt",
+    ],
+    out = "31.tar",
+    mtree = ":mtree31",
+)
+
+assert_tar_listing(
+    name = "test31_concat_packages",
+    actual = ":tar31",
+    expected = [
+        "drwxr-xr-x  0 0      0           0 Jan  1  2000 opt/",
+        "drwxr-xr-x  0 0      0           0 Jan  1  2000 opt/sdk/",
+        "-rwxr-xr-x  0 0      0           8 Jan  1  2023 opt/sdk/x.txt",
+        "-rwxr-xr-x  0 0      0           8 Jan  1  2023 opt/sdk/y.txt",
     ],
 )
